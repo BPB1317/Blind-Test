@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BLIND TEST — SOIRÉE</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════
+       ÉCRAN 1 : CONFIGURATION
+  ═══════════════════════════════════════ -->
+  <section id="screen-setup" class="screen active">
+    <div class="setup-container">
+      <h1 class="logo">🎵 BLIND TEST</h1>
+      <p class="subtitle">Soirée</p>
+
+      <!-- Paramètres de la partie -->
+      <div class="setup-card">
+        <h2>Configuration</h2>
+        <div class="settings-grid">
+          <label>Manches
+            <input type="number" id="cfg-rounds" value="3" min="1" max="20" />
+          </label>
+          <label>Questions / manche
+            <input type="number" id="cfg-questions" value="10" min="1" max="30" />
+          </label>
+          <label>Durée timer (s)
+            <input type="number" id="cfg-timer" value="30" min="5" max="120" />
+          </label>
+          <label>Points / bonne réponse
+            <input type="number" id="cfg-points" value="1" min="1" max="10" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Joueurs -->
+      <div class="setup-card">
+        <h2>Joueurs</h2>
+        <div id="players-list" class="players-list"></div>
+        <div class="add-player-row">
+          <input type="text" id="new-player-name" placeholder="Prénom du joueur…" maxlength="20" />
+          <button class="btn-secondary" id="btn-add-player">Ajouter</button>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btn-start-game">Lancer la partie</button>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       ÉCRAN 2 : JEU PRINCIPAL
+  ═══════════════════════════════════════ -->
+  <section id="screen-game" class="screen">
+
+    <!-- En-tête -->
+    <header class="game-header">
+      <div class="round-label" id="round-label">Manche 1</div>
+      <div class="question-label" id="question-label">Question 1 / 10</div>
+      <button class="btn-toggle-admin" id="btn-toggle-admin" title="Panneau admin">⚙</button>
+    </header>
+
+    <!-- Zone centrale -->
+    <main class="game-main">
+
+      <!-- Timer circulaire -->
+      <div class="timer-wrapper">
+        <svg class="timer-svg" viewBox="0 0 120 120" id="timer-svg">
+          <circle class="timer-bg" cx="60" cy="60" r="52" />
+          <circle class="timer-ring" cx="60" cy="60" r="52" id="timer-ring" />
+        </svg>
+        <div class="timer-number" id="timer-number">30</div>
+      </div>
+
+      <!-- Statut de la question -->
+      <div class="music-label" id="music-label">🎵 En cours…</div>
+
+      <!-- Réponse (cachée par défaut) -->
+      <div class="answer-box hidden" id="answer-box">
+        <span id="answer-text">—</span>
+      </div>
+
+      <!-- Actions principales -->
+      <div class="main-actions">
+        <button class="btn-reveal hidden" id="btn-reveal">Révéler la réponse</button>
+        <button class="btn-next hidden" id="btn-next">Question suivante →</button>
+      </div>
+    </main>
+
+    <!-- ─── CLASSEMENT ─── -->
+    <aside class="scoreboard" id="scoreboard">
+      <h3>Classement</h3>
+      <ul id="score-list"></ul>
+    </aside>
+
+    <!-- ─── ADMIN PANEL ─── -->
+    <aside class="admin-panel hidden" id="admin-panel">
+      <h3>Admin</h3>
+      <div id="admin-players"></div>
+      <hr class="admin-sep" />
+      <div class="admin-actions">
+        <button class="btn-admin-danger" id="btn-next-round">Manche suivante →</button>
+        <button class="btn-admin-ghost" id="btn-reset">Réinitialiser</button>
+      </div>
+    </aside>
+
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       ÉCRAN 3 : FIN DE MANCHE
+  ═══════════════════════════════════════ -->
+  <section id="screen-round-end" class="screen">
+    <div class="end-container">
+      <p class="end-meta" id="round-end-meta">Fin de la Manche 1</p>
+      <h2 class="end-title">Scores à mi-parcours</h2>
+      <ul id="round-end-scores" class="end-score-list"></ul>
+      <button class="btn-primary" id="btn-continue-round">Continuer →</button>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       ÉCRAN 4 : FINALE
+  ═══════════════════════════════════════ -->
+  <section id="screen-finale" class="screen">
+    <div class="end-container finale">
+      <p class="end-meta">Fin de la partie</p>
+      <h2 class="end-title">🏆 Résultats finals</h2>
+      <ul id="finale-scores" class="end-score-list"></ul>
+      <div class="winner-banner" id="winner-banner"></div>
+      <button class="btn-primary" id="btn-replay">Rejouer</button>
+    </div>
+    <!-- Confetti canvas -->
+    <canvas id="confetti-canvas"></canvas>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
