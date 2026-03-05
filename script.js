@@ -1,507 +1,722 @@
-/* ═══════════════════════════════════════════
-   BLIND TEST — SOIRÉE  •  script.js
-   Logique complète du jeu, vanilla JS
-═══════════════════════════════════════════ */
+/* ============================================================
+   BLIND TEST — SOIRÉE
+   script.js — Logique complète du jeu
+   ============================================================ */
 
 'use strict';
 
-/* ──────────────────────────────────────────
-   1. ÉTAT GLOBAL
-────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   1. ÉTAT DU JEU
+──────────────────────────────────────────────────────────── */
 
-/** Paramètres de la partie */
+/**
+ * Paramètres globaux de la partie.
+ * questionsPerRound est maintenant un tableau :
+ * index 0 = manche 1, index 1 = manche 2, etc.
+ */
 let gameSettings = {
-  totalRounds:           3,
-  questionsPerRound:     10,
-  timerDuration:         30,
+  totalRounds: 3,
+  questionsPerRound: [10, 10, 30], // ← tableau, un nombre par manche
+  timerDuration: 30,
   pointsPerCorrectAnswer: 1
 };
 
-/** Liste des joueurs */
-let players = [];
+/** Liste des joueurs avec leurs scores. */
+let players = [
+  { name: 'Alice', score: 0 },
+  { name: 'Thomas', score: 0 }
+];
 
-/** État courant du jeu */
-let state = {
-  currentRound:    1,   // manche en cours (1-based)
-  currentQuestion: 1,   // question dans la manche (1-based)
-  timerValue:      0,   // secondes restantes
-  timerInterval:   null,
-  revealed:        false,
-  gameOver:        false
+/** État de la partie en cours. */
+let gameState = {
+  currentRound: 0,        // index 0-based
+  currentQuestion: 0,     // index 0-based
+  timerInterval: null,    // référence setInterval
+  timeLeft: 30,           // secondes restantes
+  isAnswerRevealed: false
 };
 
-/* Constante SVG timer : 2π × r (r=52) */
-const TIMER_CIRCUMFERENCE = 2 * Math.PI * 52; // ≈ 326.73
-
-/* ──────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────
    2. SÉLECTEURS DOM
-────────────────────────────────────────── */
-const $ = id => document.getElementById(id);
+──────────────────────────────────────────────────────────── */
 
-// Setup
-const setupScreen     = $('screen-setup');
-const cfgRounds       = $('cfg-rounds');
-const cfgQuestions    = $('cfg-questions');
-const cfgTimer        = $('cfg-timer');
-const cfgPoints       = $('cfg-points');
-const playersListEl   = $('players-list');
-const newPlayerInput  = $('new-player-name');
-const btnAddPlayer    = $('btn-add-player');
-const btnStartGame    = $('btn-start-game');
+const screens = {
+  config:   document.getElementById('screen-config'),
+  game:     document.getElementById('screen-game'),
+  roundEnd: document.getElementById('screen-round-end'),
+  finale:   document.getElementById('screen-finale')
+};
 
-// Game
-const gameScreen      = $('screen-game');
-const roundLabel      = $('round-label');
-const questionLabel   = $('question-label');
-const timerRing       = $('timer-ring');
-const timerNumber     = $('timer-number');
-const musicLabel      = $('music-label');
-const answerBox       = $('answer-box');
-const answerText      = $('answer-text');
-const btnReveal       = $('btn-reveal');
-const btnNext         = $('btn-next');
-const scoreList       = $('score-list');
-const adminPanel      = $('admin-panel');
-const adminPlayers    = $('admin-players');
-const btnToggleAdmin  = $('btn-toggle-admin');
-const btnNextRound    = $('btn-next-round');
-const btnReset        = $('btn-reset');
+// Config
+const inputRounds    = document.getElementById('input-rounds');
+const inputTimer     = document.getElementById('input-timer');
+const inputPoints    = document.getElementById('input-points');
+const playersList    = document.getElementById('players-list');
+const roundsConfig   = document.getElementById('rounds-config');
+const btnAddPlayer   = document.getElementById('btn-add-player');
+const btnApplyRounds = document.getElementById('btn-apply-rounds');
+const btnStart       = document.getElementById('btn-start');
 
-// Round-end
-const roundEndScreen  = $('screen-round-end');
-const roundEndMeta    = $('round-end-meta');
-const roundEndScores  = $('round-end-scores');
-const btnContinueRound = $('btn-continue-round');
+// Jeu
+const displayRound    = document.getElementById('display-round');
+const displayQuestion = document.getElementById('display-question');
+const timerCircle     = document.getElementById('timer-circle');
+const timerDisplay    = document.getElementById('timer-display');
+const timerWrapper    = document.querySelector('.timer-wrapper');
+const gameStatus      = document.getElementById('game-status');
+const answerReveal    = document.getElementById('answer-reveal');
+const btnReveal       = document.getElementById('btn-reveal');
+const btnNextQuestion = document.getElementById('btn-next-question');
+const scoreboard      = document.getElementById('scoreboard');
+
+// Admin
+const btnToggleAdmin  = document.getElementById('btn-toggle-admin');
+const adminContent    = document.getElementById('admin-content');
+const adminPlayers    = document.getElementById('admin-players');
+const btnNextRound    = document.getElementById('btn-next-round');
+const btnReset        = document.getElementById('btn-reset');
+
+// Fin de manche
+const roundEndTitle      = document.getElementById('round-end-title');
+const roundEndScoreboard = document.getElementById('round-end-scoreboard');
+const btnContinueRound   = document.getElementById('btn-continue-round');
 
 // Finale
-const finaleScreen    = $('screen-finale');
-const finaleScores    = $('finale-scores');
-const winnerBanner    = $('winner-banner');
-const btnReplay       = $('btn-replay');
-const confettiCanvas  = $('confetti-canvas');
+const confettiCanvas    = document.getElementById('confetti-canvas');
+const winnerName        = document.getElementById('winner-name');
+const finaleScoreboard  = document.getElementById('finale-scoreboard');
+const btnRestart        = document.getElementById('btn-restart');
 
-/* ──────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────
    3. NAVIGATION ENTRE ÉCRANS
-────────────────────────────────────────── */
-function showScreen(screenEl) {
-  document.querySelectorAll('.screen').forEach(s => {
-    s.classList.remove('active');
-    s.style.display = '';
-  });
-  screenEl.classList.add('active');
+──────────────────────────────────────────────────────────── */
+
+/**
+ * Affiche un écran et masque tous les autres.
+ * @param {string} id - Clé de l'objet `screens`
+ */
+function showScreen(id) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  screens[id].classList.add('active');
 }
 
-/* ──────────────────────────────────────────
-   4. SETUP — GESTION DES JOUEURS
-────────────────────────────────────────── */
-function renderSetupPlayers() {
-  playersListEl.innerHTML = '';
-  players.forEach((p, i) => {
-    const div = document.createElement('div');
-    div.className = 'player-tag fade-in';
-    div.innerHTML = `<span>${p.name}</span>
-      <button data-index="${i}" title="Supprimer">✕</button>`;
-    playersListEl.appendChild(div);
+/* ────────────────────────────────────────────────────────────
+   4. ÉCRAN DE CONFIGURATION
+──────────────────────────────────────────────────────────── */
+
+/** Crée une ligne de saisie pour un joueur. */
+function createPlayerEntry(name = '') {
+  const div = document.createElement('div');
+  div.className = 'player-entry';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Prénom du joueur';
+  input.value = name;
+  input.maxLength = 20;
+
+  const btnRemove = document.createElement('button');
+  btnRemove.className = 'btn-remove-player';
+  btnRemove.textContent = '✕';
+  btnRemove.title = 'Supprimer ce joueur';
+  btnRemove.addEventListener('click', () => {
+    div.remove();
   });
+
+  div.appendChild(input);
+  div.appendChild(btnRemove);
+  playersList.appendChild(div);
 }
 
-function addPlayer() {
-  const name = newPlayerInput.value.trim();
-  if (!name) return;
-  if (players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-    newPlayerInput.style.borderColor = '#e74c3c';
-    setTimeout(() => newPlayerInput.style.borderColor = '', 1200);
-    return;
+/** Initialise la liste des joueurs avec les données par défaut. */
+function initPlayersList() {
+  playersList.innerHTML = '';
+  players.forEach(p => createPlayerEntry(p.name));
+}
+
+/**
+ * Génère les champs de configuration par manche.
+ * Utilise le nombre de manches saisi et conserve
+ * les valeurs déjà définies dans gameSettings.questionsPerRound.
+ */
+function buildRoundsConfig() {
+  const n = parseInt(inputRounds.value, 10) || 3;
+  roundsConfig.innerHTML = '';
+
+  for (let i = 0; i < n; i++) {
+    const current = gameSettings.questionsPerRound[i] ?? 10;
+
+    const row = document.createElement('div');
+    row.className = 'round-field';
+
+    const label = document.createElement('span');
+    label.className = 'round-field-label';
+    label.innerHTML = `<strong>Manche ${i + 1}</strong> — nombre de questions`;
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.max = '100';
+    input.value = current;
+    input.dataset.round = i; // index 0-based
+
+    row.appendChild(label);
+    row.appendChild(input);
+    roundsConfig.appendChild(row);
   }
-  players.push({ name, score: 0 });
-  newPlayerInput.value = '';
-  renderSetupPlayers();
 }
 
-btnAddPlayer.addEventListener('click', addPlayer);
-newPlayerInput.addEventListener('keydown', e => { if (e.key === 'Enter') addPlayer(); });
+/** Synchronise gameSettings.questionsPerRound avec les inputs affichés. */
+function applyRoundsConfig() {
+  const n = parseInt(inputRounds.value, 10) || 3;
+  // Réinitialise le tableau à la bonne longueur
+  gameSettings.questionsPerRound = [];
 
-playersListEl.addEventListener('click', e => {
-  const btn = e.target.closest('button[data-index]');
-  if (!btn) return;
-  players.splice(+btn.dataset.index, 1);
-  renderSetupPlayers();
-});
+  const inputs = roundsConfig.querySelectorAll('input[type="number"]');
+  inputs.forEach((inp, i) => {
+    gameSettings.questionsPerRound[i] = Math.max(1, parseInt(inp.value, 10) || 10);
+  });
 
-/* ──────────────────────────────────────────
-   5. DÉMARRAGE DE LA PARTIE
-────────────────────────────────────────── */
-btnStartGame.addEventListener('click', () => {
-  // Lire les paramètres
-  gameSettings.totalRounds           = Math.max(1, +cfgRounds.value    || 3);
-  gameSettings.questionsPerRound     = Math.max(1, +cfgQuestions.value || 10);
-  gameSettings.timerDuration         = Math.max(5, +cfgTimer.value     || 30);
-  gameSettings.pointsPerCorrectAnswer = Math.max(1, +cfgPoints.value   || 1);
+  // S'il manque des valeurs (si buildRoundsConfig n'a pas encore été appelé)
+  for (let i = gameSettings.questionsPerRound.length; i < n; i++) {
+    gameSettings.questionsPerRound[i] = 10;
+  }
+}
 
-  // Vérif : au moins 1 joueur
+/** Lit toute la configuration et prépare la partie. */
+function collectConfig() {
+  // Joueurs
+  const entries = playersList.querySelectorAll('.player-entry input');
+  players = [];
+  entries.forEach(inp => {
+    const name = inp.value.trim();
+    if (name) players.push({ name, score: 0 });
+  });
+
   if (players.length === 0) {
     alert('Ajoutez au moins un joueur !');
-    return;
+    return false;
   }
 
-  // Réinitialiser les scores
-  players.forEach(p => p.score = 0);
+  // Paramètres globaux
+  gameSettings.totalRounds   = Math.max(1, parseInt(inputRounds.value, 10) || 3);
+  gameSettings.timerDuration = Math.max(5, parseInt(inputTimer.value, 10) || 30);
+  gameSettings.pointsPerCorrectAnswer = Math.max(1, parseInt(inputPoints.value, 10) || 1);
 
-  // Réinitialiser l'état
-  state.currentRound    = 1;
-  state.currentQuestion = 1;
-  state.gameOver        = false;
+  // Questions par manche (depuis les inputs affichés)
+  applyRoundsConfig();
 
-  showScreen(gameScreen);
-  startQuestion();
-});
-
-/* ──────────────────────────────────────────
-   6. LOGIQUE DE QUESTION
-────────────────────────────────────────── */
-function startQuestion() {
-  state.revealed = false;
-
-  // Mettre à jour les labels
-  roundLabel.textContent    = `Manche ${state.currentRound} / ${gameSettings.totalRounds}`;
-  questionLabel.textContent = `Question ${state.currentQuestion} / ${gameSettings.questionsPerRound}`;
-
-  // Reset zone centrale
-  musicLabel.textContent = '🎵 En cours…';
-  musicLabel.style.opacity = '1';
-  answerBox.classList.add('hidden');
-  answerText.textContent = '—';
-  btnReveal.classList.remove('hidden');
-  btnNext.classList.add('hidden');
-
-  // Démarrer le timer
-  startTimer();
-
-  // Mettre à jour les panneaux
-  renderScoreboard();
-  renderAdminPanel();
+  return true;
 }
 
-/* ──────────────────────────────────────────
-   7. TIMER
-────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   5. TIMER
+──────────────────────────────────────────────────────────── */
+
+const CIRCUMFERENCE = 2 * Math.PI * 54; // rayon = 54 (cf. SVG)
+
+/** Initialise le cercle SVG du timer. */
+function initTimerCircle() {
+  timerCircle.style.strokeDasharray  = CIRCUMFERENCE;
+  timerCircle.style.strokeDashoffset = 0;
+}
+
+/**
+ * Met à jour l'affichage du timer.
+ * @param {number} timeLeft  - Secondes restantes
+ * @param {number} total     - Durée totale
+ */
+function updateTimerDisplay(timeLeft, total) {
+  const ratio  = timeLeft / total;
+  const offset = CIRCUMFERENCE * (1 - ratio);
+
+  timerCircle.style.strokeDashoffset = offset;
+  timerDisplay.textContent = timeLeft;
+
+  // Effet urgence à 5 secondes
+  if (timeLeft <= 5) {
+    timerWrapper.classList.add('timer-urgent');
+  } else {
+    timerWrapper.classList.remove('timer-urgent');
+  }
+}
+
+/** Démarre le compte à rebours. */
 function startTimer() {
-  clearInterval(state.timerInterval);
-  state.timerValue = gameSettings.timerDuration;
-  updateTimerDisplay();
+  stopTimer(); // s'assure qu'il n'y a pas de timer parallèle
 
-  state.timerInterval = setInterval(() => {
-    state.timerValue--;
-    updateTimerDisplay();
+  const total = gameSettings.timerDuration;
+  gameState.timeLeft = total;
+  initTimerCircle();
+  updateTimerDisplay(total, total);
 
-    if (state.timerValue <= 0) {
-      clearInterval(state.timerInterval);
+  gameState.timerInterval = setInterval(() => {
+    gameState.timeLeft--;
+    updateTimerDisplay(gameState.timeLeft, total);
+
+    if (gameState.timeLeft <= 0) {
+      stopTimer();
       onTimerEnd();
     }
   }, 1000);
 }
 
-function updateTimerDisplay() {
-  const t   = state.timerValue;
-  const max = gameSettings.timerDuration;
-
-  // Chiffre
-  timerNumber.textContent = t;
-
-  // Arc SVG : dashoffset va de 0 (plein) à CIRCUMFERENCE (vide)
-  const ratio  = t / max;
-  const offset = TIMER_CIRCUMFERENCE * (1 - ratio);
-  timerRing.style.strokeDashoffset = offset;
-
-  // Urgence (≤ 5s)
-  const urgent = t <= 5 && t > 0;
-  timerRing.classList.toggle('urgent', urgent);
-  timerNumber.classList.toggle('urgent', urgent);
-}
-
-function onTimerEnd() {
-  timerNumber.textContent = '0';
-  timerRing.style.strokeDashoffset = TIMER_CIRCUMFERENCE;
-  timerRing.classList.remove('urgent');
-  timerNumber.classList.remove('urgent');
-  musicLabel.style.opacity = '0.4';
-  // Afficher bouton révéler si pas encore fait
-  if (!state.revealed) {
-    btnReveal.classList.remove('hidden');
-  }
-}
-
+/** Arrête le compte à rebours. */
 function stopTimer() {
-  clearInterval(state.timerInterval);
-}
-
-/* ──────────────────────────────────────────
-   8. RÉVÉLATION DE LA RÉPONSE
-────────────────────────────────────────── */
-btnReveal.addEventListener('click', () => {
-  stopTimer();
-  state.revealed = true;
-
-  // Afficher le placeholder de réponse
-  answerBox.classList.remove('hidden');
-  answerText.textContent = '✓ Réponse validée — mettez à jour les scores';
-
-  btnReveal.classList.add('hidden');
-  btnNext.classList.remove('hidden');
-});
-
-/* ──────────────────────────────────────────
-   9. QUESTION SUIVANTE / MANCHE / FINALE
-────────────────────────────────────────── */
-btnNext.addEventListener('click', () => {
-  stopTimer();
-  advanceQuestion();
-});
-
-function advanceQuestion() {
-  if (state.currentQuestion < gameSettings.questionsPerRound) {
-    // Question suivante dans la même manche
-    state.currentQuestion++;
-    startQuestion();
-  } else {
-    // Fin de manche
-    if (state.currentRound < gameSettings.totalRounds) {
-      showRoundEnd();
-    } else {
-      showFinale();
-    }
+  if (gameState.timerInterval) {
+    clearInterval(gameState.timerInterval);
+    gameState.timerInterval = null;
   }
 }
 
-/* ──────────────────────────────────────────
-   10. CLASSEMENT
-────────────────────────────────────────── */
+/** Appelé quand le timer atteint 0. */
+function onTimerEnd() {
+  timerWrapper.classList.add('timer-urgent');
+  // On peut ajouter un effet supplémentaire ici si besoin
+}
+
+/* ────────────────────────────────────────────────────────────
+   6. CLASSEMENT (SCOREBOARD)
+──────────────────────────────────────────────────────────── */
+
+/**
+ * Retourne les joueurs triés par score décroissant.
+ * @returns {Array}
+ */
+function getSortedPlayers() {
+  return [...players].sort((a, b) => b.score - a.score);
+}
+
+/** Met à jour l'affichage du classement dans l'écran de jeu. */
 function renderScoreboard() {
-  const sorted = [...players].sort((a, b) => b.score - a.score);
-  scoreList.innerHTML = '';
-  sorted.forEach((p, i) => {
+  const sorted = getSortedPlayers();
+  scoreboard.innerHTML = '';
+
+  sorted.forEach((player, index) => {
     const li = document.createElement('li');
-    li.classList.toggle('leader', i === 0 && p.score > 0);
-    li.innerHTML = `<span class="s-name">${p.name}</span>
-                    <span class="s-pts">${p.score}</span>`;
-    scoreList.appendChild(li);
+    li.className = 'scoreboard-item' + (index === 0 ? ' leader' : '');
+
+    li.innerHTML = `
+      <span class="player-score-rank">${index + 1}</span>
+      <span class="player-score-name">${player.name}</span>
+      <span class="player-score-pts">${player.score} pt${player.score > 1 ? 's' : ''}</span>
+    `;
+
+    scoreboard.appendChild(li);
   });
 }
 
-/* ──────────────────────────────────────────
-   11. PANNEAU ADMIN
-────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   7. ADMIN PANEL
+──────────────────────────────────────────────────────────── */
+
+/** Construit les lignes du panel admin (une par joueur). */
 function renderAdminPanel() {
   adminPlayers.innerHTML = '';
-  players.forEach((p, i) => {
+
+  players.forEach((player, index) => {
     const row = document.createElement('div');
     row.className = 'admin-player-row';
-    row.innerHTML = `
-      <span class="ap-name">${p.name}</span>
-      <button class="btn-ap" data-action="minus" data-index="${i}">−</button>
-      <span class="ap-score" id="ap-score-${i}">${p.score}</span>
-      <button class="btn-ap" data-action="plus"  data-index="${i}">+</button>
-      <input  type="number" class="ap-input" data-index="${i}"
-              value="${p.score}" min="0" style="width:52px;padding:5px 6px;font-size:.8rem;" />
-    `;
+
+    // Nom
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'admin-player-name';
+    nameSpan.textContent = player.name;
+
+    // Bouton -1
+    const btnMinus = document.createElement('button');
+    btnMinus.className = 'btn-score';
+    btnMinus.textContent = '−';
+    btnMinus.title = '-1 point';
+    btnMinus.addEventListener('click', () => {
+      players[index].score = Math.max(0, players[index].score - 1);
+      syncAdminScore(index, scoreInput);
+      renderScoreboard();
+    });
+
+    // Champ score manuel
+    const scoreInput = document.createElement('input');
+    scoreInput.type = 'number';
+    scoreInput.className = 'admin-score-input';
+    scoreInput.value = player.score;
+    scoreInput.min = '0';
+    scoreInput.addEventListener('change', () => {
+      const val = parseInt(scoreInput.value, 10);
+      players[index].score = isNaN(val) ? 0 : Math.max(0, val);
+      scoreInput.value = players[index].score;
+      renderScoreboard();
+    });
+
+    // Bouton +1
+    const btnPlus = document.createElement('button');
+    btnPlus.className = 'btn-score';
+    btnPlus.textContent = '+';
+    btnPlus.title = '+1 point';
+    btnPlus.addEventListener('click', () => {
+      players[index].score += gameSettings.pointsPerCorrectAnswer;
+      syncAdminScore(index, scoreInput);
+      renderScoreboard();
+    });
+
+    row.appendChild(nameSpan);
+    row.appendChild(btnMinus);
+    row.appendChild(scoreInput);
+    row.appendChild(btnPlus);
     adminPlayers.appendChild(row);
   });
 }
 
-// Délégation d'événements sur le panneau admin
-adminPanel.addEventListener('click', e => {
-  const btn = e.target.closest('[data-action]');
-  if (!btn) return;
-  const i = +btn.dataset.index;
-  if (btn.dataset.action === 'plus') {
-    players[i].score += gameSettings.pointsPerCorrectAnswer;
-  } else if (btn.dataset.action === 'minus') {
-    players[i].score = Math.max(0, players[i].score - gameSettings.pointsPerCorrectAnswer);
-  }
-  refreshScores();
-});
-
-// Modification manuelle via l'input
-adminPanel.addEventListener('change', e => {
-  const input = e.target.closest('.ap-input');
-  if (!input) return;
-  const i = +input.dataset.index;
-  const v = parseInt(input.value, 10);
-  if (!isNaN(v) && v >= 0) {
-    players[i].score = v;
-    refreshScores();
-  }
-});
-
-/** Met à jour l'affichage des scores (scoreboard + admin) */
-function refreshScores() {
-  renderScoreboard();
-  // Mettre à jour uniquement les valeurs dans l'admin sans re-render complet
-  players.forEach((p, i) => {
-    const span = $(`ap-score-${i}`);
-    if (span) span.textContent = p.score;
-    const input = adminPanel.querySelector(`.ap-input[data-index="${i}"]`);
-    if (input) input.value = p.score;
-  });
+/**
+ * Synchronise la valeur affichée dans l'input admin.
+ * @param {number} index      - Index du joueur
+ * @param {HTMLInputElement} input
+ */
+function syncAdminScore(index, input) {
+  input.value = players[index].score;
 }
 
-/* Toggle admin panel */
-btnToggleAdmin.addEventListener('click', () => {
-  adminPanel.classList.toggle('hidden');
-});
+/* ────────────────────────────────────────────────────────────
+   8. LOGIQUE DU JEU
+──────────────────────────────────────────────────────────── */
 
-/* Passer à la manche suivante depuis l'admin */
-btnNextRound.addEventListener('click', () => {
+/** Démarre la partie depuis le début. */
+function startGame() {
+  if (!collectConfig()) return;
+
+  // Réinitialise l'état
+  gameState.currentRound    = 0;
+  gameState.currentQuestion = 0;
+
+  showScreen('game');
+  startRound();
+}
+
+/** Initialise et affiche la manche courante. */
+function startRound() {
+  gameState.currentQuestion = 0;
+  renderAdminPanel();
+  startQuestion();
+}
+
+/**
+ * Renvoie le nombre de questions pour la manche courante.
+ * @returns {number}
+ */
+function getQuestionsForCurrentRound() {
+  return gameSettings.questionsPerRound[gameState.currentRound] ?? 10;
+}
+
+/** Affiche et démarre la question courante. */
+function startQuestion() {
+  const round    = gameState.currentRound + 1;
+  const question = gameState.currentQuestion + 1;
+  const total    = getQuestionsForCurrentRound();
+
+  // Mise à jour de l'en-tête
+  displayRound.textContent    = `Manche ${round}`;
+  displayQuestion.textContent = `Question ${question} / ${total}`;
+
+  // Réinitialise l'affichage
+  answerReveal.classList.add('hidden');
+  gameStatus.classList.remove('hidden');
+  gameState.isAnswerRevealed = false;
+
+  // Démarre le timer
+  startTimer();
+
+  // Classement
+  renderScoreboard();
+}
+
+/** Passe à la question suivante ou à la fin de manche. */
+function nextQuestion() {
   stopTimer();
-  if (state.currentRound < gameSettings.totalRounds) {
+
+  gameState.currentQuestion++;
+  const totalQuestions = getQuestionsForCurrentRound();
+
+  if (gameState.currentQuestion >= totalQuestions) {
+    // Fin de manche
     showRoundEnd();
   } else {
-    showFinale();
+    startQuestion();
   }
-});
-
-/* Réinitialiser */
-btnReset.addEventListener('click', () => {
-  if (!confirm('Réinitialiser la partie ? Tous les scores seront effacés.')) return;
-  stopTimer();
-  players.forEach(p => p.score = 0);
-  state.currentRound    = 1;
-  state.currentQuestion = 1;
-  state.gameOver        = false;
-  adminPanel.classList.add('hidden');
-  showScreen(setupScreen);
-});
-
-/* ──────────────────────────────────────────
-   12. FIN DE MANCHE
-────────────────────────────────────────── */
-function showRoundEnd() {
-  roundEndMeta.textContent = `Fin de la Manche ${state.currentRound} sur ${gameSettings.totalRounds}`;
-  renderEndScores(roundEndScores);
-  showScreen(roundEndScreen);
 }
 
-btnContinueRound.addEventListener('click', () => {
-  state.currentRound++;
-  state.currentQuestion = 1;
-  showScreen(gameScreen);
-  startQuestion();
-});
+/** Passe à la manche suivante (depuis le panel admin). */
+function nextRound() {
+  stopTimer();
+  showRoundEnd();
+}
 
-/* ──────────────────────────────────────────
-   13. FINALE
-────────────────────────────────────────── */
-function showFinale() {
-  state.gameOver = true;
-  renderEndScores(finaleScores);
+/* ────────────────────────────────────────────────────────────
+   9. ÉCRAN FIN DE MANCHE
+──────────────────────────────────────────────────────────── */
 
-  // Déterminer le(s) gagnant(s)
-  const maxScore = Math.max(...players.map(p => p.score));
-  const winners  = players.filter(p => p.score === maxScore);
-  if (winners.length === 1) {
-    winnerBanner.textContent = `🏆 Félicitations ${winners[0].name} !`;
+/** Affiche l'écran de fin de manche avec le classement. */
+function showRoundEnd() {
+  const roundNumber = gameState.currentRound + 1;
+  roundEndTitle.textContent = `Manche ${roundNumber}`;
+
+  // Classement
+  const sorted = getSortedPlayers();
+  roundEndScoreboard.innerHTML = '';
+
+  sorted.forEach((player, index) => {
+    const li = document.createElement('li');
+    li.className = 'end-score-item' + (index === 0 ? ' first-place' : '');
+    li.style.setProperty('--i', index);
+
+    li.innerHTML = `
+      <span class="end-rank">${index + 1}</span>
+      <span class="end-name">${player.name}</span>
+      <span class="end-pts">${player.score} pt${player.score > 1 ? 's' : ''}</span>
+    `;
+
+    roundEndScoreboard.appendChild(li);
+  });
+
+  showScreen('roundEnd');
+}
+
+/** Appelé au clic sur "Continuer" depuis la fin de manche. */
+function continueAfterRound() {
+  gameState.currentRound++;
+
+  if (gameState.currentRound >= gameSettings.totalRounds) {
+    // Toutes les manches sont terminées → finale
+    showFinale();
   } else {
-    winnerBanner.textContent = `🤝 Égalité : ${winners.map(w => w.name).join(' & ')} !`;
+    // Prochaine manche
+    showScreen('game');
+    startRound();
   }
+}
 
-  showScreen(finaleScreen);
+/* ────────────────────────────────────────────────────────────
+   10. ÉCRAN FINALE
+──────────────────────────────────────────────────────────── */
+
+/** Affiche l'écran de fin de partie avec le gagnant. */
+function showFinale() {
+  const sorted = getSortedPlayers();
+  const winner = sorted[0];
+
+  winnerName.textContent = winner.name;
+
+  // Classement final
+  finaleScoreboard.innerHTML = '';
+  sorted.forEach((player, index) => {
+    const li = document.createElement('li');
+    li.className = 'end-score-item' + (index === 0 ? ' first-place' : '');
+    li.style.setProperty('--i', index);
+
+    li.innerHTML = `
+      <span class="end-rank">${index + 1}</span>
+      <span class="end-name">${player.name}</span>
+      <span class="end-pts">${player.score} pt${player.score > 1 ? 's' : ''}</span>
+    `;
+
+    finaleScoreboard.appendChild(li);
+  });
+
+  showScreen('finale');
   launchConfetti();
 }
 
-btnReplay.addEventListener('click', () => {
-  stopConfetti();
-  players.forEach(p => p.score = 0);
-  showScreen(setupScreen);
-});
+/* ────────────────────────────────────────────────────────────
+   11. CONFETTIS (canvas, sans librairie)
+──────────────────────────────────────────────────────────── */
 
-/* ── Utilitaire : remplir une liste de scores ── */
-function renderEndScores(listEl) {
-  const sorted = [...players].sort((a, b) => b.score - a.score);
-  listEl.innerHTML = '';
-  sorted.forEach((p, i) => {
-    const li = document.createElement('li');
-    li.classList.toggle('top', i === 0);
-    li.style.animationDelay = `${i * 0.08}s`;
-    li.innerHTML = `<span class="rank">${i + 1}.</span>
-                    <span class="e-name">${p.name}</span>
-                    <span class="e-pts">${p.score} pt${p.score > 1 ? 's' : ''}</span>`;
-    listEl.appendChild(li);
-  });
-}
+let confettiActive = false;
 
-/* ──────────────────────────────────────────
-   14. CONFETTI (canvas léger)
-────────────────────────────────────────── */
-let confettiAnimId = null;
-const confettiParticles = [];
-
+/**
+ * Lance une animation de confettis en teintes dorées.
+ * Dessinés sur un canvas, aucune librairie requise.
+ */
 function launchConfetti() {
-  confettiCanvas.width  = window.innerWidth;
-  confettiCanvas.height = window.innerHeight;
-  confettiParticles.length = 0;
+  const canvas = confettiCanvas;
+  const ctx    = canvas.getContext('2d');
 
-  const colors = ['#c9a84c','#e2c97e','#f0ede6','#ffffff','#7a7870'];
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
 
-  // Créer 120 particules
-  for (let i = 0; i < 120; i++) {
-    confettiParticles.push({
-      x:    Math.random() * confettiCanvas.width,
-      y:    -20 - Math.random() * confettiCanvas.height * .5,
-      w:    4 + Math.random() * 8,
-      h:    6 + Math.random() * 12,
-      color: colors[Math.floor(Math.random() * colors.length)],
-      rot:  Math.random() * Math.PI * 2,
-      rotSpeed: (Math.random() - .5) * .1,
-      vx:   (Math.random() - .5) * 2,
-      vy:   1.5 + Math.random() * 2,
-      alpha: 1
-    });
-  }
+  confettiActive = true;
+
+  // Palette sobre : or, blanc cassé, beige
+  const COLORS = ['#c9a84c', '#e8c97e', '#f0ece4', '#a07830', '#d4b86a'];
+
+  // Création des particules
+  const particles = Array.from({ length: 80 }, () => ({
+    x:    Math.random() * canvas.width,
+    y:    Math.random() * -canvas.height,
+    w:    Math.random() * 8 + 4,
+    h:    Math.random() * 4 + 2,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    speed: Math.random() * 2 + 1.5,
+    angle: Math.random() * Math.PI * 2,
+    spin:  (Math.random() - 0.5) * 0.15,
+    drift: (Math.random() - 0.5) * 1
+  }));
+
+  let frame = 0;
+  const MAX_FRAMES = 300; // ~5 secondes à 60fps
 
   function draw() {
-    const ctx = confettiCanvas.getContext('2d');
-    ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-    let alive = false;
+    if (!confettiActive) return;
 
-    confettiParticles.forEach(p => {
-      p.x   += p.vx;
-      p.y   += p.vy;
-      p.rot += p.rotSpeed;
-      if (p.y > confettiCanvas.height * .7) p.alpha -= .012;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (p.alpha > 0) {
-        alive = true;
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, p.alpha);
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-        ctx.restore();
+    particles.forEach(p => {
+      p.y     += p.speed;
+      p.x     += p.drift;
+      p.angle += p.spin;
+
+      // Repositionne en haut si la particule sort en bas
+      if (p.y > canvas.height) {
+        p.y = -10;
+        p.x = Math.random() * canvas.width;
       }
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
     });
 
-    if (alive) {
-      confettiAnimId = requestAnimationFrame(draw);
+    frame++;
+    if (frame < MAX_FRAMES) {
+      requestAnimationFrame(draw);
     } else {
-      ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      // Fondu de sortie
+      let alpha = 1;
+      const fade = setInterval(() => {
+        alpha -= 0.05;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = alpha;
+        if (alpha <= 0) {
+          clearInterval(fade);
+          confettiActive = false;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }, 50);
     }
   }
 
-  confettiAnimId = requestAnimationFrame(draw);
+  draw();
 }
 
-function stopConfetti() {
-  if (confettiAnimId) cancelAnimationFrame(confettiAnimId);
-  const ctx = confettiCanvas.getContext('2d');
-  ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+/* ────────────────────────────────────────────────────────────
+   12. RÉINITIALISATION
+──────────────────────────────────────────────────────────── */
+
+/** Remet tout à zéro et retourne à l'écran de configuration. */
+function resetGame() {
+  stopTimer();
+  confettiActive = false;
+
+  // Remet les scores à 0
+  players.forEach(p => { p.score = 0; });
+
+  gameState.currentRound    = 0;
+  gameState.currentQuestion = 0;
+
+  showScreen('config');
+  initPlayersList();
+  buildRoundsConfig();
 }
 
-/* ──────────────────────────────────────────
-   15. INIT — pré-peupler 2 joueurs démo
-────────────────────────────────────────── */
-players = [
-  { name: 'Alice',  score: 0 },
-  { name: 'Thomas', score: 0 }
-];
-renderSetupPlayers();
+/* ────────────────────────────────────────────────────────────
+   13. ÉVÉNEMENTS
+──────────────────────────────────────────────────────────── */
+
+// Config : ajouter un joueur
+btnAddPlayer.addEventListener('click', () => {
+  createPlayerEntry('');
+  // Focus sur le nouveau champ
+  const entries = playersList.querySelectorAll('.player-entry input');
+  entries[entries.length - 1].focus();
+});
+
+// Config : mettre à jour l'affichage des manches
+btnApplyRounds.addEventListener('click', () => {
+  applyRoundsConfig();       // sauvegarde les valeurs courantes
+  buildRoundsConfig();       // reconstruit avec le bon nombre de lignes
+});
+
+// Le nombre de manches change → on reconstruit les champs
+inputRounds.addEventListener('change', () => {
+  applyRoundsConfig();
+  buildRoundsConfig();
+});
+
+// Lancer la partie
+btnStart.addEventListener('click', startGame);
+
+// Révéler la réponse
+btnReveal.addEventListener('click', () => {
+  if (!gameState.isAnswerRevealed) {
+    stopTimer();
+    gameStatus.classList.add('hidden');
+    answerReveal.classList.remove('hidden');
+    gameState.isAnswerRevealed = true;
+  }
+});
+
+// Question suivante
+btnNextQuestion.addEventListener('click', nextQuestion);
+
+// Admin : toggle panel
+btnToggleAdmin.addEventListener('click', () => {
+  adminContent.classList.toggle('hidden');
+  btnToggleAdmin.textContent = adminContent.classList.contains('hidden')
+    ? '⚙ Admin'
+    : '✕ Fermer';
+});
+
+// Admin : manche suivante
+btnNextRound.addEventListener('click', () => {
+  if (confirm('Passer à la manche suivante ?')) {
+    nextRound();
+  }
+});
+
+// Admin : réinitialiser
+btnReset.addEventListener('click', () => {
+  if (confirm('Réinitialiser la partie ?')) {
+    resetGame();
+  }
+});
+
+// Fin de manche : continuer
+btnContinueRound.addEventListener('click', continueAfterRound);
+
+// Finale : nouvelle partie
+btnRestart.addEventListener('click', resetGame);
+
+// Redimensionnement du canvas confettis
+window.addEventListener('resize', () => {
+  confettiCanvas.width  = window.innerWidth;
+  confettiCanvas.height = window.innerHeight;
+});
+
+/* ────────────────────────────────────────────────────────────
+   14. INITIALISATION
+──────────────────────────────────────────────────────────── */
+
+/** Point d'entrée : prépare l'interface au chargement de la page. */
+function init() {
+  // Pré-remplit la liste des joueurs
+  initPlayersList();
+
+  // Construit les champs de questions par manche
+  buildRoundsConfig();
+
+  // Affiche l'écran de configuration
+  showScreen('config');
+}
+
+init();
